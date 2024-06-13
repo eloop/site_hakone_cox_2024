@@ -1,2 +1,3 @@
-# site_hakone_cox_2024
-Hakone data.
+Run the app beneath a simple web server eg
+
+    python3 -m http.server 9000
