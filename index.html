@@ -1,442 +1,429 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Three.js with lil-gui</title>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-  <script src="https://unpkg.com/three@0.128.0/examples/js/controls/TrackballControls.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/lil-gui@0.17.0"></script>
-  <style>
-    body, html { margin: 0; height: 100%; width: 100%; overflow: hidden; }
-    canvas { display: block; }
-    .gui-container {
-      position: absolute;
-      top: 10px;
-      left: 10px;
-    }
-    .playbar {
-      position: absolute;
-      bottom: 10px;
-      left: 50%;
-      transform: translateX(-50%);
-      display: flex;
-      gap: 10px;
-    }
-    .frame-info {
-      position: absolute; 
-      bottom: 10px;
-      right: 10px;
-      font-family: Arial, sans-serif;
-      font-size: 16px;
-      color: white;
-      text-align: right;
-    }
-    .file-upload-container {
-      position: absolute;
-      top: 10px;
-      right: 10px;
-    }
-    .file-upload-container input {
-      display: none;
-    }
-    .file-upload-container label {
-      background-color: #000000;
-      color: white;
-      padding: 10px;
-      border-radius: 5px;
-      cursor: pointer;
-    }
-  </style>
-</head>
-<body>
-  <div id="gui-container" class="gui-container"></div>
-  <div class="playbar">
-    <button id="play-pause">Play</button>
-    <button id="step-back">Step Back</button>
-    <button id="step-forward">Step Forward</button>
-  </div>
-  <div class="frame-info" id="frame-info"></div>
-  <div class="file-upload-container">
-    <input type="file" id="file-input" accept=".json">
-    <label for="file-input">Load JSON</label>
-  </div>
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Three.js with lil-gui</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://unpkg.com/three@0.128.0/examples/js/controls/TrackballControls.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/lil-gui@0.17.0"></script>
+    <script src="https://threejs.org/examples/js/geometries/TextGeometry.js"></script>
+    <script src="https://threejs.org/examples/js/loaders/FontLoader.js"></script>
 
-  <script>
-    let scene, camera, renderer, controls, pointLight;
-    let isPlaying = false;
-    let currentFrame = 1;
-    let animationLength = 1500; // Default animation length
-    let decimalYear = 1995;
-    let spheres = [];
-    let jsonData = [];
-    let sphereRadius = 25;
-    let eventWindow = 0.2;
-    const frameInfo = document.getElementById('frame-info');
-    let frameSliderController;
-
-    init();
-    animate();
-
-    function init() {
-      // Create scene
-      scene = new THREE.Scene();
-
-      // Create camera
-      camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 10000);
-      camera.position.z = 100;
-
-      // Create renderer
-      renderer = new THREE.WebGLRenderer({ antialias: true });
-      renderer.setSize(window.innerWidth, window.innerHeight);
-      renderer.outputEncoding = THREE.sRGBEncoding;
-      document.body.appendChild(renderer.domElement);
-
-      // Add controls
-      controls = new THREE.TrackballControls(camera, renderer.domElement);
-
-      // Add point light
-      pointLight = new THREE.PointLight(0xffffff, 1);
-      scene.add(pointLight);
-
-      // Add axis gnomon
-      addAxisGnomon();
-
-      // Handle window resize
-      window.addEventListener('resize', onWindowResize);
-
-      // GUI setup
-      setupGUI();
-
-      // Playbar button actions
-      document.getElementById('play-pause').addEventListener('click', togglePlayPause);
-      document.getElementById('step-back').addEventListener('click', stepBack);
-      document.getElementById('step-forward').addEventListener('click', stepForward);
-
-      // File input change event
-      document.getElementById('file-input').addEventListener('change', handleFileUpload);
-
-      // Load default JSON data
-      loadDefaultJSON();
-    }
-
-    function setupGUI() {
-      const gui = new lil.GUI({ container: document.getElementById('gui-container') });
-      gui.addColor({ backgroundColor: '#000000' }, 'backgroundColor').onChange((value) => {
-        renderer.setClearColor(value);
-      });
-
-      gui.add({ sphereRadius: sphereRadius }, 'sphereRadius', 1, 200).onFinishChange((value) => { // Updated max to 200
-        sphereRadius = value;
-        updateSpheres(false); // Update spheres without recalculating the bounding box
-      });
-
-      frameSliderController = gui.add({ frameSlider: currentFrame }, 'frameSlider', 1, animationLength, 1).name('Frame').onChange((value) => {
-        currentFrame = value;
-        decimalYear = 1995 + (value - 1) * (2020 - 1995) / (animationLength - 1);
-        updateSphereColors();
-        updateFrameInfo();
-      });
-
-      gui.add({ eventWindow: eventWindow }, 'eventWindow', 0.05, 1.0, 0.01).name('Event Window').onChange((value) => {
-        eventWindow = value;
-        updateSphereColors();
-      });
-
-      gui.add({ animationLength: animationLength }, 'animationLength', 30, 3000, 1).name('Animation Length').onChange((value) => {
-        animationLength = value;
-        currentFrame = 1;
-        decimalYear = 1995 + (currentFrame - 1) * (2020 - 1995) / (animationLength - 1);
-        frameSliderController.max(animationLength); // Update the max value of the frame slider
-        updateSphereColors();
-        updateFrameInfo();
-      });
-
-      gui.add({ resetView: resetView }, 'resetView').name('Reset View');
-    }
-
-    function onWindowResize() {
-      camera.aspect = window.innerWidth / window.innerHeight;
-      camera.updateProjectionMatrix();
-      renderer.setSize(window.innerWidth, window.innerHeight);
-    }
-
-    function animate() {
-      requestAnimationFrame(animate);
-      controls.update();
-      pointLight.position.copy(camera.position); // Update the light position to follow the camera
-      renderer.render(scene, camera);
-
-      if (isPlaying) {
-        currentFrame = (currentFrame % animationLength) + 1;
-        decimalYear = 1995 + (currentFrame - 1) * (2020 - 1995) / (animationLength - 1);
-        updateSphereColors();
-        updateFrameInfo();
-        frameSliderController.setValue(currentFrame); // Update the GUI slider
-        controls.dispatchEvent({ type: 'change' }); // Ensures TrackballControls updates
+    <style>
+      body, html { margin: 0; height: 100%; width: 100%; overflow: hidden; }
+      canvas { display: block; }
+      .gui-container {
+          position: absolute;
+          top: 10px;
+          left: 10px;
       }
-    }
+      .playbar {
+          position: absolute;
+          bottom: 10px;
+          left: 50%;
+          transform: translateX(-50%);
+          display: flex;
+          gap: 10px;
+      }
+      .frame-info {
+          position: absolute;
+          bottom: 10px;
+          right: 10px;
+          font-family: Arial, sans-serif;
+          font-size: 16px;
+          color: white;
+          text-align: right;
+      }
+      .file-upload-container {
+          position: absolute;
+          top: 10px;
+          right: 10px;
+      }
+      .file-upload-container input {
+          display: none;
+      }
+      .file-upload-container label {
+          background-color: #000000;
+          color: white;
+          padding: 10px;
+          border-radius: 5px;
+          cursor: pointer;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="gui-container" class="gui-container"></div>
+    <div class="playbar">
+      <button id="play-pause">Play</button>
+      <button id="step-back">Step Back</button>
+      <button id="step-forward">Step Forward</button>
+    </div>
+    <div class="frame-info" id="frame-info"></div>
+    <div class="file-upload-container">
+      <input type="file" id="file-input" accept=".json">
+      <label for="file-input">Load JSON</label>
+    </div>
 
-    function handleFileUpload(event) {
-      const file = event.target.files[0];
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        try {
-          jsonData = JSON.parse(e.target.result);
-          updateSpheres(true);
-          updateSphereColors();
-          resetView();
-        } catch (error) {
-          console.error('Error parsing JSON:', error);
-        }
-      };
-      reader.readAsText(file);
-    }
+    <script>
+      let scene, camera, renderer, controls, pointLight;
+      let isPlaying = false;
+      let currentFrame = 1;
+      let animationLength = 1500;
+      let decimalYear = 1995;
+      let spheres = [];
+      let jsonData = [];
+      let sphereRadius = 25;
+      let eventWindow = 0.2;
+      const frameInfo = document.getElementById('frame-info');
+      let frameSliderController, animationLengthController;
 
-    function loadDefaultJSON() {
-      fetch('assets/hakone.json')
-        .then(response => response.json())
-        .then(data => {
-          jsonData = data;
-          updateSpheres(true);
-          updateSphereColors();
-          resetView();
-        })
-        .catch(error => console.error('Error loading default JSON:', error));
-    }
+      init();
+      loadJSON('assets/hakone.json');
+      animate();
 
-    function updateSpheres(recalculateBoundingBox = false) {
-      // Remove only the previously added spheres
-      const toRemove = [];
-      scene.traverse((object) => {
-        if (object.userData.type === 'dynamic') {
-          toRemove.push(object);
-        }
-      });
-      toRemove.forEach((object) => scene.remove(object));
-
-      if (jsonData.length === 0) {
-        console.warn('No JSON data available to render.');
-        return;
+      function init() {
+          scene = new THREE.Scene();
+          camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 10000);
+          camera.position.z = 100;
+          renderer = new THREE.WebGLRenderer({ antialias: true });
+          renderer.setSize(window.innerWidth, window.innerHeight);
+          renderer.outputEncoding = THREE.sRGBEncoding;
+          document.body.appendChild(renderer.domElement);
+          controls = new THREE.TrackballControls(camera, renderer.domElement);
+          pointLight = new THREE.PointLight(0xffffff, 1);
+          scene.add(pointLight);
+          addAxisGnomon();
+          window.addEventListener('resize', onWindowResize);
+          setupGUI();
+          document.getElementById('play-pause').addEventListener('click', togglePlayPause);
+          document.getElementById('step-back').addEventListener('click', stepBack);
+          document.getElementById('step-forward').addEventListener('click', stepForward);
+          document.getElementById('file-input').addEventListener('change', handleFileUpload);
       }
 
-      const positions = jsonData.map(item => {
-        const x = parseFloat(item.easting);
-        const y = parseFloat(item.depth);
-        const z = -parseFloat(item.northing);
-
-        if (isNaN(x) || isNaN(y) || isNaN(z)) {
-          console.error('Invalid position data:', item);
-          return null;
-        }
-
-        return {
-          position: new THREE.Vector3(x, y, z),
-          decimalYear: parseFloat(item.decimal_year)
-        };
-      }).filter(pos => pos.position !== null);
-
-      if (positions.length === 0) {
-        console.warn('No valid positions to render.');
-        return;
+      function setupGUI() {
+          const gui = new lil.GUI({ container: document.getElementById('gui-container') });
+          gui.addColor({ backgroundColor: '#000000' }, 'backgroundColor').onChange((value) => {
+              renderer.setClearColor(value);
+          });
+          gui.add({ sphereRadius: sphereRadius }, 'sphereRadius', 1, 200).onFinishChange((value) => {
+              sphereRadius = value;
+              updateSpheres();
+          });
+          frameSliderController = gui.add({ frameSlider: currentFrame }, 'frameSlider', 1, animationLength, 1).name('Frame').onChange((value) => {
+              currentFrame = value;
+              decimalYear = 1995 + (value - 1) * (2020 - 1995) / (animationLength - 1);
+              updateSphereColors();
+              updateFrameInfo();
+          });
+          animationLengthController = gui.add({ animationLength: animationLength }, 'animationLength', 30, 2000, 1).name('Animation Length').onChange((value) => {
+              animationLength = value;
+              currentFrame = 1;
+              frameSliderController.max(animationLength);
+              updateFrameInfo();
+          });
+          gui.add({ eventWindow: eventWindow }, 'eventWindow', 0.05, 1.0, 0.01).name('Event Window').onChange((value) => {
+              eventWindow = value;
+              updateSphereColors();
+          });
+          gui.add({ resetView: () => resetView() }, 'resetView').name('Reset View');
       }
 
-      if (recalculateBoundingBox) {
-        const boundingBox = new THREE.Box3();
+      function onWindowResize() {
+          camera.aspect = window.innerWidth / window.innerHeight;
+          camera.updateProjectionMatrix();
+          renderer.setSize(window.innerWidth, window.innerHeight);
+      }
 
-        positions.forEach(pos => {
-          boundingBox.expandByPoint(pos.position);
-        });
-
-        console.log('Bounding Box:', boundingBox);
-
-        // Remove existing bounding box and labels
-        scene.traverse((object) => {
-          if (object.userData.type === 'boundingBox' || object.userData.type === 'label') {
-            scene.remove(object);
+      function animate() {
+          requestAnimationFrame(animate);
+          controls.update();
+          pointLight.position.copy(camera.position);
+          renderer.render(scene, camera);
+          if (isPlaying) {
+              currentFrame = (currentFrame % animationLength) + 1;
+              decimalYear = 1995 + (currentFrame - 1) * (2020 - 1995) / (animationLength - 1);
+              updateSphereColors();
+              updateFrameInfo();
+              frameSliderController.setValue(currentFrame);
+              controls.dispatchEvent({ type: 'change' });
           }
+      }
+
+      function handleFileUpload(event) {
+          const file = event.target.files[0];
+          const reader = new FileReader();
+          reader.onload = (e) => {
+              try {
+                  jsonData = JSON.parse(e.target.result);
+                  updateSpheres(true);
+                  updateSphereColors();
+                  resetView();
+              } catch (error) {
+                  console.error('Error parsing JSON:', error);
+              }
+          };
+          reader.readAsText(file);
+      }
+
+      function loadJSON(path) {
+          fetch(path)
+              .then(response => response.json())
+              .then(data => {
+                  jsonData = data;
+                  updateSpheres(true);
+                  updateSphereColors();
+
+                  // Calculate bounding box of all spheres
+                  const boundingBox = new THREE.Box3();
+                  spheres.forEach(sphere => boundingBox.expandByObject(sphere));
+
+                  resetView(boundingBox);
+              })
+              .catch(error => console.error('Error loading JSON:', error));
+      }
+
+
+      function updateSpheres(recalculateBoundingBox = false) {
+          const toRemove = [];
+          scene.traverse((object) => {
+              if (object.userData.type === 'dynamic') {
+                  toRemove.push(object);
+              }
+          });
+          toRemove.forEach((object) => scene.remove(object));
+
+          if (jsonData.length === 0) {
+              console.warn('No JSON data available to render.');
+              return;
+          }
+
+          const positions = jsonData.map(item => {
+              const x = parseFloat(item.easting);
+              const y = parseFloat(item.depth);
+              const z = -parseFloat(item.northing);
+
+              if (isNaN(x) || isNaN(y) || isNaN(z)) {
+                  console.error('Invalid position data:', item);
+                  return null;
+              }
+
+              return {
+                  position: new THREE.Vector3(x, y, z),
+                  decimalYear: parseFloat(item.decimal_year)
+              };
+          }).filter(pos => pos.position !== null);
+
+          if (positions.length === 0) {
+              console.warn('No valid positions to render.');
+              return;
+          }
+
+          const center = new THREE.Vector3();
+          const boundingBox = new THREE.Box3();
+
+          positions.forEach(pos => {
+              center.add(pos.position);
+              boundingBox.expandByPoint(pos.position);
+          });
+          center.divideScalar(positions.length);
+
+          const geometry = new THREE.SphereGeometry(sphereRadius, 32, 32);
+          const material = new THREE.MeshPhongMaterial({ color: 0xffffff });
+          positions.forEach(pos => {
+              const sphere = new THREE.Mesh(geometry, material.clone());
+              sphere.position.set(pos.position.x, pos.position.y, pos.position.z);
+              sphere.userData.type = 'dynamic';
+              sphere.userData.decimalYear = pos.decimalYear;
+              scene.add(sphere);
+              spheres.push(sphere);
+          });
+
+          if (recalculateBoundingBox) {
+              createBoundingBox(boundingBox);
+              resetView(boundingBox);
+          }
+      }
+
+
+
+let boundingBoxMesh, tickMarksGroup;
+
+function createBoundingBox(boundingBox) {
+  // Remove existing bounding box and tick marks
+  if (boundingBoxMesh) scene.remove(boundingBoxMesh);
+  if (tickMarksGroup) scene.remove(tickMarksGroup);
+
+  // Create new group for tick marks and labels
+  tickMarksGroup = new THREE.Group();
+  scene.add(tickMarksGroup);
+
+  // Create bounding box
+  const boxGeometry = new THREE.BoxGeometry(
+    boundingBox.max.x - boundingBox.min.x,
+    boundingBox.max.y - boundingBox.min.y,
+    boundingBox.max.z - boundingBox.min.z
+  );
+  const edgesGeometry = new THREE.EdgesGeometry(boxGeometry);
+  const lineMaterial = new THREE.LineBasicMaterial({ color: 0xffffff });
+  boundingBoxMesh = new THREE.LineSegments(edgesGeometry, lineMaterial);
+  boundingBoxMesh.position.copy(boundingBox.getCenter(new THREE.Vector3()));
+  boundingBoxMesh.userData.type = 'boundingBox';
+  scene.add(boundingBoxMesh);
+
+  // Create tick marks and labels
+  createTickMarksAndLabels(boundingBox);
+}
+
+function createTickMarksAndLabels(boundingBox) {
+  const tickMarkMaterial = new THREE.LineBasicMaterial({ color: 0xff0000 });
+  const size = boundingBox.getSize(new THREE.Vector3());
+  const tickMarkLength = Math.min(size.x, size.y, size.z) * 0.05;
+  const tickMarkSpacing = Math.max(size.x, size.y, size.z) * 0.1;
+
+  // Function to create tick marks
+  const createTickMarks = (axis, start, end, fixed1, fixed2) => {
+    for (let i = start; i <= end; i += tickMarkSpacing) {
+      const points = axis === 'x' ? [
+        new THREE.Vector3(i, fixed1, fixed2),
+        new THREE.Vector3(i, fixed1 + tickMarkLength, fixed2)
+      ] : axis === 'y' ? [
+        new THREE.Vector3(fixed1, i, fixed2),
+        new THREE.Vector3(fixed1, i, fixed2 + tickMarkLength)
+      ] : [
+        new THREE.Vector3(fixed1, fixed2, i),
+        new THREE.Vector3(fixed1 + tickMarkLength, fixed2, i)
+      ];
+
+      const tickMarkGeometry = new THREE.BufferGeometry().setFromPoints(points);
+      const tickMark = new THREE.Line(tickMarkGeometry, tickMarkMaterial);
+      tickMarksGroup.add(tickMark);
+    }
+  };
+
+  // Create tick marks for each axis
+  createTickMarks('x', boundingBox.min.x, boundingBox.max.x, boundingBox.min.y, boundingBox.min.z);
+  createTickMarks('y', boundingBox.min.y, boundingBox.max.y, boundingBox.min.x, boundingBox.min.z);
+  createTickMarks('z', boundingBox.min.z, boundingBox.max.z, boundingBox.min.x, boundingBox.min.y);
+
+  // Load font and create labels
+  const loader = new THREE.FontLoader();
+  loader.load('https://threejs.org/examples/fonts/helvetiker_regular.typeface.json', function(font) {
+    const textMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff });
+    const textSize = Math.min(size.x, size.y, size.z) * 0.02;
+
+    const createLabels = (axis, start, end, fixed1, fixed2) => {
+      for (let i = start; i <= end; i += tickMarkSpacing) {
+        const label = Math.round(i).toString();
+        const textGeometry = new THREE.TextGeometry(label, {
+          font: font,
+          size: textSize,
+          height: textSize * 0.1,
         });
+        const textMesh = new THREE.Mesh(textGeometry, textMaterial);
 
-        // Add new bounding box
-        const boxGeometry = new THREE.BoxGeometry(
-          boundingBox.max.x - boundingBox.min.x,
-          boundingBox.max.y - boundingBox.min.y,
-          boundingBox.max.z - boundingBox.min.z
-        );
-        const wireframe = new THREE.EdgesGeometry(boxGeometry);
-        const lineMaterial = new THREE.LineBasicMaterial({ color: 0xffffff });
-        const boundingBoxMesh = new THREE.LineSegments(wireframe, lineMaterial);
-        boundingBoxMesh.position.copy(boundingBox.getCenter(new THREE.Vector3()));
-        boundingBoxMesh.userData.type = 'boundingBox';
-        scene.add(boundingBoxMesh);
-
-        // Add tick marks and labels
-        addTickMarksAndLabels(boundingBox);
-
-        controls.target.copy(boundingBox.getCenter(new THREE.Vector3()));
-        controls.update();
-      }
-
-      const lod = new THREE.LOD();
-      const highDetailGeometry = new THREE.SphereGeometry(sphereRadius, 32, 32);
-      const midDetailGeometry = new THREE.SphereGeometry(sphereRadius, 16, 16);
-      const lowDetailGeometry = new THREE.SphereGeometry(sphereRadius, 8, 8);
-
-      positions.forEach(pos => {
-        const highDetailMaterial = new THREE.MeshPhongMaterial();
-        const midDetailMaterial = new THREE.MeshPhongMaterial();
-        const lowDetailMaterial = new THREE.MeshPhongMaterial();
-
-        const highDetailSphere = new THREE.Mesh(highDetailGeometry, highDetailMaterial);
-        const midDetailSphere = new THREE.Mesh(midDetailGeometry, midDetailMaterial);
-        const lowDetailSphere = new THREE.Mesh(lowDetailGeometry, lowDetailMaterial);
-
-        const lod = new THREE.LOD();
-        lod.addLevel(highDetailSphere, 0);
-        lod.addLevel(midDetailSphere, 200);
-        lod.addLevel(lowDetailSphere, 400);
-
-        lod.position.copy(pos.position);
-        lod.userData.type = 'dynamic';
-        lod.userData.decimalYear = pos.decimalYear;
-
-        scene.add(lod);
-        spheres.push(lod);
-      });
-
-      if (recalculateBoundingBox) {
-        resetView();  // Ensure the view is reset after updating spheres
-      }
-    }
-
-    function addTickMarksAndLabels(boundingBox) {
-      const tickSpacing = 100;
-      const textSize = 10;
-      const labelColor = 0xffffff;
-
-      const createLabel = (text, position) => {
-        const canvas = document.createElement('canvas');
-        const context = canvas.getContext('2d');
-        context.font = `${textSize}px Arial`;
-        context.fillStyle = 'white';
-        context.fillText(text, 0, textSize);
-
-        const texture = new THREE.CanvasTexture(canvas);
-        const material = new THREE.SpriteMaterial({ map: texture });
-        const sprite = new THREE.Sprite(material);
-        sprite.position.copy(position);
-        sprite.scale.set(30, 15, 1); // Adjust scale as needed
-        sprite.userData.type = 'label';
-        return sprite;
-      };
-
-      for (let x = Math.ceil(boundingBox.min.x / tickSpacing) * tickSpacing; x <= boundingBox.max.x; x += tickSpacing) {
-        const tick = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(x, boundingBox.min.y, boundingBox.min.z), new THREE.Vector3(x, boundingBox.min.y, boundingBox.min.z + 10)]), new THREE.LineBasicMaterial({ color: labelColor }));
-        tick.userData.type = 'label';
-        scene.add(tick);
-        const label = createLabel(x.toString(), new THREE.Vector3(x, boundingBox.min.y - 20, boundingBox.min.z));
-        scene.add(label);
-      }
-
-      for (let y = Math.ceil(boundingBox.min.y / tickSpacing) * tickSpacing; y <= boundingBox.max.y; y += tickSpacing) {
-        const tick = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(boundingBox.min.x, y, boundingBox.min.z), new THREE.Vector3(boundingBox.min.x + 10, y, boundingBox.min.z)]), new THREE.LineBasicMaterial({ color: labelColor }));
-        tick.userData.type = 'label';
-        scene.add(tick);
-        const label = createLabel(y.toString(), new THREE.Vector3(boundingBox.min.x - 20, y, boundingBox.min.z));
-        scene.add(label);
-      }
-
-      for (let z = Math.ceil(boundingBox.min.z / tickSpacing) * tickSpacing; z <= boundingBox.max.z; z += tickSpacing) {
-        const tick = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(boundingBox.min.x, boundingBox.min.y, z), new THREE.Vector3(boundingBox.min.x, boundingBox.min.y + 10, z)]), new THREE.LineBasicMaterial({ color: labelColor }));
-        tick.userData.type = 'label';
-        scene.add(tick);
-        const label = createLabel(z.toString(), new THREE.Vector3(boundingBox.min.x - 20, boundingBox.min.y, z));
-        scene.add(label);
-      }
-    }
-
-    function updateSphereColors() {
-      spheres.forEach(sphere => {
-        const yearDifference = sphere.userData.decimalYear - decimalYear;
-        if (yearDifference > 0 && yearDifference < eventWindow) {
-          sphere.traverse((child) => {
-            if (child.isMesh) {
-              child.material.color.set(0xff0000);
-            }
-          });
+        if (axis === 'x') {
+          textMesh.position.set(i, fixed1 + tickMarkLength * 1.5, fixed2);
+        } else if (axis === 'y') {
+          textMesh.position.set(fixed1 - tickMarkLength, i, fixed2 + tickMarkLength * 1.5);
+          textMesh.rotation.z = -Math.PI / 2;
         } else {
-          sphere.traverse((child) => {
-            if (child.isMesh) {
-              child.material.color.set(0xffffff);
-            }
-          });
+          textMesh.position.set(fixed1 + tickMarkLength * 1.5, fixed2, i);
+          textMesh.rotation.y = Math.PI / 2;
         }
-      });
-    }
 
-    function addAxisGnomon() {
-      const axisLength = 50;
-      const axesHelper = new THREE.AxesHelper(axisLength);
-      axesHelper.position.set(-window.innerWidth / 2 + 60, -window.innerHeight / 2 + 60, 0);
-      scene.add(axesHelper);
-    }
+        tickMarksGroup.add(textMesh);
+      }
+    };
 
-    function resetView() {
-      const boundingBox = new THREE.Box3().setFromObject(scene);
-      if (boundingBox.isEmpty()) return;  // Do nothing if there's no bounding box
+    createLabels('x', boundingBox.min.x, boundingBox.max.x, boundingBox.min.y, boundingBox.min.z);
+    createLabels('y', boundingBox.min.y, boundingBox.max.y, boundingBox.min.x, boundingBox.min.z);
+    createLabels('z', boundingBox.min.z, boundingBox.max.z, boundingBox.min.x, boundingBox.min.y);
+  });
+}
 
-      const center = boundingBox.getCenter(new THREE.Vector3());
-      const size = boundingBox.getSize(new THREE.Vector3());
-      const maxDim = Math.max(size.x, size.y, size.z);
-      const fov = (camera.fov * Math.PI) / 180; // Convert FOV from degrees to radians
-      let cameraZ = Math.abs(maxDim / 2 / Math.tan(fov / 2));
-      cameraZ *= 2; // Adjust the factor to ensure the camera is outside the bounding box
+      function resetView(boundingBox) {
+          if (!boundingBox || boundingBox.isEmpty()) {
+              console.warn('Invalid or empty bounding box');
+              return;
+          }
 
-      console.log('Bounding Box:', boundingBox);
-      console.log('Center:', center);
-      console.log('Size:', size);
-      console.log('Max Dimension:', maxDim);
-      console.log('Calculated Camera Z:', cameraZ);
+          const center = boundingBox.getCenter(new THREE.Vector3());
+          const size = boundingBox.getSize(new THREE.Vector3());
 
-      controls.reset(); // Reset controls before calculating the camera position
+          // Calculate the radius of a sphere that would enclose the bounding box
+          const radius = size.length() / 2;
 
-      camera.position.set(center.x, center.y, center.z + cameraZ);
-      camera.near = maxDim / 1000;
-      camera.far = maxDim * 10;
-      camera.updateProjectionMatrix();
-      camera.lookAt(center);
+          // Calculate the distance needed to fit the sphere in view
+          const fov = camera.fov * (Math.PI / 180);
+          const distanceToFit = radius / Math.sin(fov / 2);
 
-      const distance = camera.position.distanceTo(center);
-      console.log('Distance from Camera to Center:', distance);
+          // Set camera position
+          const direction = new THREE.Vector3(1, 1, 1).normalize();
+          camera.position.copy(center).add(direction.multiplyScalar(distanceToFit * 1.1)); // Add 10% extra distance
 
-      controls.target.copy(center);
-      controls.update();
-    }
+          camera.lookAt(center);
+          camera.near = distanceToFit / 100;
+          camera.far = distanceToFit * 100;
+          camera.updateProjectionMatrix();
 
-    function togglePlayPause() {
-      isPlaying = !isPlaying;
-      document.getElementById('play-pause').textContent = isPlaying ? 'Pause' : 'Play';
-    }
+          // Update controls
+          controls.target.copy(center);
+          controls.maxDistance = distanceToFit * 10;
+          controls.update();
 
-    function stepForward() {
-      currentFrame = (currentFrame % animationLength) + 1;
-      decimalYear = 1995 + (currentFrame - 1) * (2020 - 1995) / (animationLength - 1);
-      updateSphereColors();
-      updateFrameInfo();
-      frameSliderController.setValue(currentFrame); // Update the GUI slider
-    }
+          console.log('Camera position:', camera.position);
+          console.log('Center position:', center);
+          console.log('Distance to center:', camera.position.distanceTo(center));
+      }
 
-    function stepBack() {
-      currentFrame = currentFrame === 1 ? animationLength : currentFrame - 1;
-      decimalYear = 1995 + (currentFrame - 1) * (2020 - 1995) / (animationLength - 1);
-      updateSphereColors();
-      updateFrameInfo();
-      frameSliderController.setValue(currentFrame); // Update the GUI slider
-    }
+      function updateSphereColors() {
+          const startDecimalYear = decimalYear - eventWindow;
+          const endDecimalYear = decimalYear + eventWindow;
+          spheres.forEach(sphere => {
+              const { decimalYear } = sphere.userData;
+              if (decimalYear >= startDecimalYear && decimalYear <= endDecimalYear) {
+                  sphere.material.color.set(0xff0000);
+              } else {
+                  sphere.material.color.set(0xffffff);
+              }
+          });
+      }
 
-    function updateFrameInfo() {
-      frameInfo.innerHTML = `Frame: ${currentFrame} / ${animationLength}<br>Decimal Year: ${decimalYear.toFixed(4)}`;
-    }
-  </script>
-</body>
+      function updateFrameInfo() {
+          frameInfo.textContent = `Frame: ${currentFrame} / ${animationLength}, Year: ${decimalYear.toFixed(2)}`;
+      }
+
+      function togglePlayPause() {
+          isPlaying = !isPlaying;
+          document.getElementById('play-pause').textContent = isPlaying ? 'Pause' : 'Play';
+      }
+
+      function stepBack() {
+          currentFrame = Math.max(1, currentFrame - 1);
+          decimalYear = 1995 + (currentFrame - 1) * (2020 - 1995) / (animationLength - 1);
+          updateSphereColors();
+          updateFrameInfo();
+          frameSliderController.setValue(currentFrame);
+      }
+
+      function stepForward() {
+          currentFrame = Math.min(animationLength, currentFrame + 1);
+          decimalYear = 1995 + (currentFrame - 1) * (2020 - 1995) / (animationLength - 1);
+          updateSphereColors();
+          updateFrameInfo();
+          frameSliderController.setValue(currentFrame);
+      }
+
+      function addAxisGnomon() {
+          const size = 1;
+          const divisions = 10;
+          const axesHelper = new THREE.AxesHelper(size);
+          scene.add(axesHelper);
+          const gridHelper = new THREE.GridHelper(size, divisions);
+          scene.add(gridHelper);
+      }
+    </script>
+  </body>
 </html>
